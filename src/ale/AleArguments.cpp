@@ -29,6 +29,7 @@ AleArguments::AleArguments(int iargc, char **iargv)
       highwayCandidatesStep2(DEFAULT_HIGHWAY_CANDIDATES_2),
       skipFamilyFiltering(false),
       minCoveredSpecies(DEFAULT_MIN_COVERED_SPECIES),
+      conditionOnCoverage(false),
       trimFamilyRatio(DEFAULT_TRIM_FAMILY_RATIO),
       maxCladeSplitRatio(DEFAULT_MAX_SPLIT_RATIO),
       sampleFrequency(DEFAULT_SAMPLE_FREQUENCY), output("alerax_output"),
@@ -124,6 +125,8 @@ AleArguments::AleArguments(int iargc, char **iargv)
       skipFamilyFiltering = true;
     } else if (arg == "--min-covered-species") {
       minCoveredSpecies = atof(argv[++i]);
+    } else if (arg == "--condition-on-coverage") {
+      conditionOnCoverage = true;
     } else if (arg == "--trim-ratio") {
       trimFamilyRatio = atof(argv[++i]);
     } else if (arg == "--max-clade-split-ratio") {
@@ -355,6 +358,10 @@ void AleArguments::printSummary() const {
                << geneTreeSamples << std::endl;
   Logger::info << "\tAleRax will exclude gene families covering less than "
                << minCoveredSpecies << " species" << std::endl;
+  if (conditionOnCoverage) {
+    Logger::info << "\tThe likelihood will be conditioned on covering at "
+                 << "least " << minCoveredSpecies << " species" << std::endl;
+  }
   if (trimFamilyRatio != DEFAULT_TRIM_FAMILY_RATIO) {
     Logger::info << "\tAleRax will exclude top " << trimFamilyRatio * 100
                  << "\% of the gene families with the highest numbers of "
@@ -415,6 +422,7 @@ void AleArguments::printHelp() const {
 
   Logger::info << "Trimming options:" << std::endl;
   Logger::info << "\t--min-covered-species <int>" << std::endl;
+  Logger::info << "\t--condition-on-coverage" << std::endl;
   Logger::info << "\t--trim-ratio <proportion>" << std::endl;
   Logger::info << "\t--max-clade-split-ratio <value>" << std::endl;
   Logger::info << "\t--ccp-sample-frequency <int>" << std::endl;
@@ -571,6 +579,31 @@ void AleArguments::checkValid() const {
     ok = false;
     Logger::info << "\nError: --min-covered-species can only take "
                  << "values >= 1" << std::endl;
+  }
+  if (conditionOnCoverage) {
+    if (reconciliationModelStr != "UndatedDL") {
+      ok = false;
+      Logger::info << "\nError: --condition-on-coverage is only implemented "
+                   << "for --rec-model UndatedDL" << std::endl;
+    }
+    if (originationStrategy == OriginationStrategy::LCA) {
+      ok = false;
+      Logger::info << "\nError: --condition-on-coverage cannot be used with "
+                   << "--origination LCA, whose origination depends on the "
+                   << "family" << std::endl;
+    }
+    if (pruneSpeciesTree) {
+      ok = false;
+      Logger::info << "\nError: --condition-on-coverage cannot be used with "
+                   << "--prune-species-tree" << std::endl;
+    }
+    if (trimFamilyRatio != DEFAULT_TRIM_FAMILY_RATIO ||
+        maxCladeSplitRatio != DEFAULT_MAX_SPLIT_RATIO) {
+      ok = false;
+      Logger::info << "\nError: --condition-on-coverage accounts only for "
+                   << "the --min-covered-species filter, not for "
+                   << "--trim-ratio or --max-clade-split-ratio" << std::endl;
+    }
   }
   if (trimFamilyRatio < 0.0 || trimFamilyRatio > 1.0) {
     ok = false;

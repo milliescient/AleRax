@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CoverageConditioning.hpp"
 #include "MultiModel.hpp"
 
 /**
@@ -27,6 +28,9 @@ private:
   std::vector<double> _PS; // Speciation probability, per species branch
   std::vector<double> _OP; // Origination probability, per species branch
   std::vector<REAL> _uE;   // Extinction probability, per species branch
+  // P(observed in >= --min-covered-species species), per gamma category,
+  // used instead of survival with --condition-on-coverage
+  std::vector<double> _coverageFactor;
   OriginationStrategy _originationStrategy;
 
   // Element e of the gene clade's DLCLV stores the probability of the clade,
@@ -246,14 +250,56 @@ void UndatedDLMultiModel<REAL>::recomputeSpeciesProbabilities() {
       }
     }
   } // end of iteration
+  if (CoverageConditioning::enabled()) {
+    // exact extinction (the smaller root at each branch, in postorder), so
+    // that the family likelihoods and the conditioning factor agree
+    auto &nodes = this->getPrunedSpeciesNodes();
+    std::vector<int> pos(allSpeciesNumber, -1);
+    CoverageConditioning::Tree t;
+    for (auto speciesNode : nodes) {
+      auto e = speciesNode->node_index;
+      pos[e] = static_cast<int>(t.left.size());
+      auto left = this->getSpeciesLeft(speciesNode);
+      auto right = this->getSpeciesRight(speciesNode);
+      t.left.push_back(left ? pos[left->node_index] : -1);
+      t.right.push_back(right ? pos[right->node_index] : -1);
+      assert(!left || (t.left.back() >= 0 && t.right.back() >= 0));
+      t.op.push_back(_OP[e]);
+      t.fm.push_back(left ? 0.0 : this->_fm[e]);
+    }
+    _coverageFactor.assign(_gammaCatNumber, 0.0);
+    for (unsigned int c = 0; c < _gammaCatNumber; ++c) {
+      t.pD.clear();
+      t.pL.clear();
+      t.pS.clear();
+      for (auto speciesNode : nodes) {
+        auto ec = speciesNode->node_index * _gammaCatNumber + c;
+        t.pD.push_back(_PD[ec]);
+        t.pL.push_back(_PL[ec]);
+        t.pS.push_back(_PS[ec]);
+      }
+      std::vector<char> none(nodes.size(), 0);
+      std::vector<double> E;
+      CoverageConditioning::maskedExtinction(t, none, E);
+      for (size_t i = 0; i < nodes.size(); ++i) {
+        _uE[nodes[i]->node_index * _gammaCatNumber + c] = REAL(E[i]);
+      }
+      _coverageFactor[c] = CoverageConditioning::cachedCoverageProbability(
+          t, CoverageConditioning::minSpecies());
+    }
+  }
 }
 
 /**
  *  Correction factor to the species tree likelihood,
- *  because we condition on survival
+ *  because we condition on survival (or, with --condition-on-coverage, on
+ *  being observed in at least --min-covered-species species)
  */
 template <class REAL>
 double UndatedDLMultiModel<REAL>::getLikelihoodFactor(unsigned int category) {
+  if (CoverageConditioning::enabled()) {
+    return _coverageFactor[category];
+  }
   double factor(0.0);
   auto c = category;
   for (auto speciesNode : this->getPrunedSpeciesNodes()) {

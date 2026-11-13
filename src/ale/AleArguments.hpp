@@ -90,6 +90,7 @@ public:
   // trimming
   bool skipFamilyFiltering;
   unsigned int minCoveredSpecies;
+  bool conditionOnCoverage;
   double trimFamilyRatio;
   double maxCladeSplitRatio;
   unsigned int sampleFrequency;

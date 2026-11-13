@@ -19,6 +19,7 @@
 #include <util/utils.hpp>
 
 #include "AleArguments.hpp"
+#include "CoverageConditioning.hpp"
 #include "AleOptimizer.hpp"
 #include "TrimFamilies.hpp"
 
@@ -601,6 +602,9 @@ int alerax_main(int argc, char **argv, void *commPtr) {
   Logger::timed << version << std::endl;
   AleArguments args(argc, argv);
   args.checkValid();
+  if (args.conditionOnCoverage) {
+    CoverageConditioning::minSpecies() = args.minCoveredSpecies;
+  }
   run(args);
   Logger::close();
   ParallelContext::finalize();
